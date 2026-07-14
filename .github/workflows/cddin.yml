@@ -13,12 +13,27 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22' # 匹配项目所需较新版 Go 环境
+          go-version: '1.22'
 
-      - name: Build FreeBSD Binary
+      - name: Find go.mod and Build FreeBSD Binary
         run: |
-          # 开启 CGO_ENABLED=0 确保纯静态编译，完美兼容 Serv00
-          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -ldflags="-s -w" -o sub2api main.go
+          # 1. 自动寻找 go.mod 所在的目录
+          MOD_PATH=$(find . -name "go.mod" -print -quit)
+          if [ -z "$MOD_PATH" ]; then
+            echo "错误: 未在仓库中找到 go.mod 文件！"
+            exit 1
+          fi
+          
+          # 获取 go.mod 所在目录的绝对路径
+          SRC_DIR=$(dirname "$(realpath "$MOD_PATH")")
+          echo "找到 go.mod 所在目录: $SRC_DIR"
+          cd "$SRC_DIR"
+
+          # 2. 编译 FreeBSD 二进制文件 (不再写死 main.go，由 Go 自动识别 main 包)
+          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -ldflags="-s -w" -o sub2api
+
+          # 3. 将编译好的二进制移动到工作流根目录以便打包
+          mv sub2api $GITHUB_WORKSPACE/
 
       - name: Tar binary file
         run: |
@@ -29,4 +44,4 @@ jobs:
         with:
           name: sub2api-freebsd-pkg
           path: sub2api-freebsd-amd64.tar.gz
-          retention-days: 5 # 编译好的文件在 GitHub 留存 5 天
+          retention-days: 5
