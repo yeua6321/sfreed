@@ -13,26 +13,21 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.23' # 兼容该项目较新的 Go 环境要求
 
-      - name: Find go.mod and Build FreeBSD Binary
+      - name: Build FreeBSD Binary
         run: |
-          # 1. 自动寻找 go.mod 所在的目录
-          MOD_PATH=$(find . -name "go.mod" -print -quit)
-          if [ -z "$MOD_PATH" ]; then
-            echo "错误: 未在仓库中找到 go.mod 文件！"
-            exit 1
-          fi
+          # 1. 强制切换到后端源码所在子目录
+          cd backend || { echo "错误: 没找到 backend 目录"; exit 1; }
           
-          # 获取 go.mod 所在目录的绝对路径
-          SRC_DIR=$(dirname "$(realpath "$MOD_PATH")")
-          echo "找到 go.mod 所在目录: $SRC_DIR"
-          cd "$SRC_DIR"
+          # 2. 生成 Ent 框架所需的依赖文件 (如果项目有需要)
+          go generate ./ent || echo "跳过 go generate"
 
-          # 2. 编译 FreeBSD 二进制文件 (不再写死 main.go，由 Go 自动识别 main 包)
-          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -ldflags="-s -w" -o sub2api
+          # 3. 编译 FreeBSD 二进制文件
+          # 必须携带 -tags embed 否则打包出来的程序不带前端网页！
+          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -tags embed -ldflags="-s -w" -o sub2api ./cmd/server/
 
-          # 3. 将编译好的二进制移动到工作流根目录以便打包
+          # 4. 将编译好的二进制移动到工作流根目录
           mv sub2api $GITHUB_WORKSPACE/
 
       - name: Tar binary file
