@@ -67,13 +67,6 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run build
 
-      - name: Generate wire
-        run: |
-          cd backend
-          go install github.com/google/wire/cmd/wire@latest
-          export PATH="$(go env GOPATH)/bin:$PATH"
-          wire gen ./...
-
       - name: Build FreeBSD binary
         run: |
           cd backend
