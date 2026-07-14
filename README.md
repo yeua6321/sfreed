@@ -17,4 +17,5 @@ chmod +x sub2api
 
 # MARK一下升级的命令
 
-[https://github.com/KiritoXDone/Sub2API-Freebsd/issues/2](https://github.com/KiritoXDone/Sub2API-Freebsd/issues/2)
+[https://github.com/KiritoXDone/Sub2API-Freebsd/issues/2]
+(https://github.com/KiritoXDone/Sub2API-Freebsd/issues/2)
