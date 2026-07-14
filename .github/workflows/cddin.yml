@@ -86,8 +86,7 @@ jobs:
           path: sub2api_${{ steps.version.outputs.VERSION }}_freebsd_amd64.tar.gz
           retention-days: 30
 
-      - name: Create GitHub Release (if tag specified)
-        if: inputs.tag != ''
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.VERSION }}
@@ -95,5 +94,6 @@ jobs:
           body: FreeBSD amd64 build of Sub2API ${{ steps.version.outputs.VERSION }}
           draft: false
           prerelease: false
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
