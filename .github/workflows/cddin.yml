@@ -7,46 +7,25 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1 # 确保拉取到完整的最新源码目录结构
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23' # 匹配该项目所需的 Go 环境要求
+          go-version: '1.23' # 使用匹配项目的较新版 Go 环境
 
-      - name: Locate and Build FreeBSD Binary
+      - name: Clone official Sub2API and Build FreeBSD Binary
         run: |
-          echo "==== 正在检查当前工作目录结构 ===="
-          ls -la
+          echo "==== 1. 正在克隆官方最新版 Sub2API 源码 ===="
+          # 直接拉取官方的最新代码，避免你本地仓库代码缺失的问题
+          git clone --depth=1 https://github.com official-sub2api
           
-          # 1. 动态查找包含 go.mod 的准确后端目录
-          MOD_FILE=$(find . -name "go.mod" -print -quit)
-          if [ -z "$MOD_FILE" ]; then
-            echo "错误：无法在仓库中找到 go.mod 文件！请确保你在正确的 Fork 分支上运行。"
-            exit 1
-          fi
-          
-          BACKEND_DIR=$(dirname "$MOD_FILE")
-          echo "成功找到 Go 后端目录：$BACKEND_DIR"
-          cd "$BACKEND_DIR"
+          cd official-sub2api/backend || { echo "错误：官方源码中未找到 backend 目录！"; exit 1; }
+          echo "成功进入后端源码目录"
 
-          # 2. 查找 main 入口函数的包路径 (通常在 cmd/server)
-          MAIN_DIR=$(find . -name "main.go" -exec grep -l "package main" {} \; -print -quit)
-          if [ -n "$MAIN_DIR" ]; then
-            BUILD_TARGET=$(dirname "$MAIN_DIR")
-          else
-            BUILD_TARGET="."
-          fi
-          echo "编译目标路径：$BUILD_TARGET"
+          echo "==== 2. 开始编译适用于 Serv00 的 FreeBSD 二进制文件 ===="
+          # 开启纯静态编译并携带网页嵌入标签
+          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -tags embed -ldflags="-s -w" -o sub2api ./cmd/server/
 
-          # 3. 编译静态 FreeBSD AMD64 二进制文件
-          # 必须携带 -tags embed 以便打包前端 UI 网页
-          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -tags embed -ldflags="-s -w" -o sub2api "$BUILD_TARGET"
-
-          # 4. 将成品移动至根目录以便后续打包
+          # 将编译好的二进制移动到工作流根目录
           mv sub2api $GITHUB_WORKSPACE/
 
       - name: Tar binary file
