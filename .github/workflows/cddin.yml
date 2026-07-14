@@ -1,40 +1,110 @@
-name: Build for Serv00 FreeBSD
+name: Build Sub2API for FreeBSD
 
 on:
-  workflow_dispatch: # 支持手动点击按钮触发编译
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Upstream tag (e.g. v0.1.139). Leave blank for latest release.'
+        required: false
+        default: ''
+  schedule:
+    - cron: '0 2 * * 1'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GOOS: freebsd
+      GOARCH: amd64
+      CGO_ENABLED: 0
     steps:
-      - name: Set up Go
+      - name: Checkout Sub2API
+        uses: actions/checkout@v4
+        with:
+          repository: Wei-Shaw/sub2api
+          ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || 'main' }}
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "VERSION=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(curl -sL https://api.github.com/repos/Wei-Shaw/sub2api/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+            if [ -z "$VERSION" ]; then
+              VERSION=$(git describe --tags --always)
+            fi
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23' # 使用匹配项目的较新版 Go 环境
+          go-version: '1.26.2'
 
-      - name: Clone official Sub2API and Build FreeBSD Binary
+      - name: Cache pnpm
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Build frontend
         run: |
-          echo "==== 1. 正在克隆官方最新版 Sub2API 源码 ===="
-          # 直接拉取官方的最新代码，避免你本地仓库代码缺失的问题
-          git clone --depth=1 https://github.com official-sub2api
-          
-          cd official-sub2api/backend || { echo "错误：官方源码中未找到 backend 目录！"; exit 1; }
-          echo "成功进入后端源码目录"
+          cd frontend
+          pnpm install --frozen-lockfile
+          pnpm run build
 
-          echo "==== 2. 开始编译适用于 Serv00 的 FreeBSD 二进制文件 ===="
-          # 开启纯静态编译并携带网页嵌入标签
-          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -tags embed -ldflags="-s -w" -o sub2api ./cmd/server/
-
-          # 将编译好的二进制移动到工作流根目录
-          mv sub2api $GITHUB_WORKSPACE/
-
-      - name: Tar binary file
+      - name: Prepare backend
         run: |
-          tar -czvf sub2api-freebsd-amd64.tar.gz sub2api
+          mkdir -p backend/internal/web/dist
+          cp -r frontend/dist/* backend/internal/web/dist/
 
-      - name: Upload Artifact
+      - name: Generate wire
+        run: |
+          cd backend
+          go install github.com/google/wire/cmd/wire@latest
+          $(go env GOPATH)/bin/wire gen ./...
+
+      - name: Build FreeBSD binary
+        run: |
+          cd backend
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          go build -tags embed -ldflags="-s -w -trimpath -X main.Version=${VERSION}" -o sub2api_freebsd_amd64 ./cmd/server
+
+      - name: Package artifact
+        run: |
+          mkdir -p sub2api_freebsd_amd64
+          cp backend/sub2api_freebsd_amd64 sub2api_freebsd_amd64/
+          tar czf sub2api_${{ steps.version.outputs.VERSION }}_freebsd_amd64.tar.gz sub2api_freebsd_amd64
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sub2api-freebsd-pkg
-          path: sub2api-freebsd-amd64.tar.gz
-          retention-days: 5
+          name: sub2api-freebsd-amd64
+          path: sub2api_${{ steps.version.outputs.VERSION }}_freebsd_amd64.tar.gz
+          retention-days: 30
+
+      - name: Create GitHub Release (if tag specified)
+        if: inputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          files: sub2api_${{ steps.version.outputs.VERSION }}_freebsd_amd64.tar.gz
+          body: FreeBSD amd64 build of Sub2API ${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
