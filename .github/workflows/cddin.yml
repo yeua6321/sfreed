@@ -9,25 +9,44 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1 # 确保拉取到完整的最新源码目录结构
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23' # 兼容该项目较新的 Go 环境要求
+          go-version: '1.23' # 匹配该项目所需的 Go 环境要求
 
-      - name: Build FreeBSD Binary
+      - name: Locate and Build FreeBSD Binary
         run: |
-          # 1. 强制切换到后端源码所在子目录
-          cd backend || { echo "错误: 没找到 backend 目录"; exit 1; }
+          echo "==== 正在检查当前工作目录结构 ===="
+          ls -la
           
-          # 2. 生成 Ent 框架所需的依赖文件 (如果项目有需要)
-          go generate ./ent || echo "跳过 go generate"
+          # 1. 动态查找包含 go.mod 的准确后端目录
+          MOD_FILE=$(find . -name "go.mod" -print -quit)
+          if [ -z "$MOD_FILE" ]; then
+            echo "错误：无法在仓库中找到 go.mod 文件！请确保你在正确的 Fork 分支上运行。"
+            exit 1
+          fi
+          
+          BACKEND_DIR=$(dirname "$MOD_FILE")
+          echo "成功找到 Go 后端目录：$BACKEND_DIR"
+          cd "$BACKEND_DIR"
 
-          # 3. 编译 FreeBSD 二进制文件
-          # 必须携带 -tags embed 否则打包出来的程序不带前端网页！
-          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -tags embed -ldflags="-s -w" -o sub2api ./cmd/server/
+          # 2. 查找 main 入口函数的包路径 (通常在 cmd/server)
+          MAIN_DIR=$(find . -name "main.go" -exec grep -l "package main" {} \; -print -quit)
+          if [ -n "$MAIN_DIR" ]; then
+            BUILD_TARGET=$(dirname "$MAIN_DIR")
+          else
+            BUILD_TARGET="."
+          fi
+          echo "编译目标路径：$BUILD_TARGET"
 
-          # 4. 将编译好的二进制移动到工作流根目录
+          # 3. 编译静态 FreeBSD AMD64 二进制文件
+          # 必须携带 -tags embed 以便打包前端 UI 网页
+          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build -tags embed -ldflags="-s -w" -o sub2api "$BUILD_TARGET"
+
+          # 4. 将成品移动至根目录以便后续打包
           mv sub2api $GITHUB_WORKSPACE/
 
       - name: Tar binary file
