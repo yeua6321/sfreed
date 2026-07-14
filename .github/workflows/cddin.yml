@@ -71,7 +71,7 @@ jobs:
         run: |
           cd backend
           VERSION="${{ steps.version.outputs.VERSION }}"
-          go build -tags embed -ldflags="-s -w -trimpath -X main.Version=${VERSION}" -o sub2api_freebsd_amd64 ./cmd/server
+          go build -tags embed -trimpath -ldflags="-s -w -X main.Version=${VERSION}" -o sub2api_freebsd_amd64 ./cmd/server
 
       - name: Package artifact
         run: |
