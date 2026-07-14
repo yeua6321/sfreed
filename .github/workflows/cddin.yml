@@ -71,7 +71,8 @@ jobs:
         run: |
           cd backend
           go install github.com/google/wire/cmd/wire@latest
-          $(go env GOPATH)/bin/wire gen ./...
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          wire gen ./...
 
       - name: Build FreeBSD binary
         run: |
